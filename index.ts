@@ -66,7 +66,9 @@ wss.on("connection", (ws) => {
           })
         );
       } else if (message.type === "connecttogame") {
-        console.log("connecting to game " + message.payload);
+        console.log(
+          "connecting to game " + JSON.stringify(message.payload, null, 2)
+        );
         const game = games[message.payload.game];
         if (game) {
           // remove from any other games
