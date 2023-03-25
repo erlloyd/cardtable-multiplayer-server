@@ -12,6 +12,7 @@ const wss = new WebSocketServer({ host: "0.0.0.0", port: 8080 });
 interface IGameInfo {
   [key: string]: {
     playerConnections: WebSocket.WebSocket[];
+    // latestVerifiedState: any;
   };
 }
 
@@ -70,29 +71,35 @@ wss.on("connection", (ws) => {
           "connecting to game " + JSON.stringify(message.payload, null, 2)
         );
         const game = games[message.payload.game];
+        let hostClient: WebSocket.WebSocket | null = null;
         if (game) {
-          // remove from any other games
+          // remove from any other games and get the "primary host"
           games = removeConnectionFromGames(ws, games);
-          const hostClient = games[message.payload.game].playerConnections[0];
-          games[message.payload.game].playerConnections.push(ws);
-          ws.send(
+          hostClient = games[message.payload.game].playerConnections[0];
+        } else {
+          // create the game because it didn't exist
+          games[message.payload.game] = { playerConnections: [] };
+        }
+
+        games[message.payload.game].playerConnections.push(ws);
+        ws.send(
+          JSON.stringify({
+            type: "connectedtogame",
+            payload: message.payload.game,
+          })
+        );
+
+        if (!!hostClient) {
+          hostClient.send(
             JSON.stringify({
-              type: "connectedtogame",
-              payload: message.payload.game,
+              type: "newplayerconnected",
+              payload: {
+                playerRef: message.payload.playerRef,
+              },
             })
           );
-
-          if (!!hostClient) {
-            hostClient.send(
-              JSON.stringify({
-                type: "newplayerconnected",
-                payload: {
-                  playerRef: message.payload.playerRef,
-                },
-              })
-            );
-          }
         }
+
         console.log(games);
       } else if (message.type === "remoteaction") {
         console.log("received remote action", message);
