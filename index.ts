@@ -9,9 +9,14 @@ import WebSocket, { WebSocketServer } from "ws";
 
 const wss = new WebSocketServer({ host: "0.0.0.0", port: 8080 });
 
+interface IConnectionInfo {
+  websocket: WebSocket.WebSocket;
+  playerRef: string;
+}
+
 interface IGameInfo {
   [key: string]: {
-    playerConnections: WebSocket.WebSocket[];
+    playerConnections: IConnectionInfo[];
     // latestVerifiedState: any;
   };
 }
@@ -24,14 +29,79 @@ interface IMessage {
 
 let games: IGameInfo = {};
 
+const debugPrintGames = (games: IGameInfo) => {
+  console.log("------GAMES-------");
+  console.log(
+    JSON.stringify(
+      games,
+      (key, value) => {
+        return key === "websocket" ? `WS state: ${value.readyState}` : value;
+      },
+      2
+    )
+  );
+  console.log("------END GAMES---");
+};
+
+const getGamesWithConnection = (
+  ws: WebSocket.WebSocket,
+  games: IGameInfo
+): string[] => {
+  return Object.keys(games).filter((game) =>
+    games[game].playerConnections.map((pc) => pc.websocket).includes(ws)
+  );
+};
+
+const getPlayerRefInfoForConnection = (
+  ws: WebSocket.WebSocket,
+  games: IGameInfo
+): string[] => {
+  return Object.keys(games).map(
+    (game) =>
+      games[game].playerConnections.find((pc) => pc.websocket === ws).playerRef
+  );
+};
+
+const notifyLeftGame = (
+  games: IGameInfo,
+  affectedGames: string[],
+  playerRefs: string[]
+) => {
+  if (affectedGames.length !== playerRefs.length) {
+    console.error("Should have the same number of refs and games");
+    return;
+  }
+
+  affectedGames.forEach((g, index) => {
+    const connections = games[g]?.playerConnections ?? [];
+    connections.forEach((pc) => {
+      console.log(
+        `notifying ${pc.playerRef} that ${playerRefs[index]} left the game`
+      );
+      const c = pc.websocket;
+      if (c.readyState === WebSocket.OPEN) {
+        console.log("sending");
+        c.send(
+          JSON.stringify({
+            type: "playerleft",
+            payload: {
+              playerRef: playerRefs[index],
+            },
+          })
+        );
+      }
+    });
+  });
+};
+
 const removeConnectionFromGames = (
   ws: WebSocket.WebSocket,
   games: IGameInfo
 ): IGameInfo => {
   Object.keys(games).forEach((game) => {
-    if (games[game].playerConnections.includes(ws)) {
+    if (games[game].playerConnections.map((pc) => pc.websocket).includes(ws)) {
       games[game].playerConnections = games[game].playerConnections.filter(
-        (w) => w !== ws
+        (pc) => pc.websocket !== ws
       );
     }
   });
@@ -54,11 +124,13 @@ wss.on("connection", (ws) => {
         };
         const gameName = uniqueNamesGenerator(customConfig);
         games[gameName] = {
-          playerConnections: [ws],
+          playerConnections: [
+            { websocket: ws, playerRef: message.payload.playerRef },
+          ],
         };
 
         console.log("NEW GAME");
-        console.log(games);
+        debugPrintGames(games);
 
         ws.send(
           JSON.stringify({
@@ -71,7 +143,7 @@ wss.on("connection", (ws) => {
           "connecting to game " + JSON.stringify(message.payload, null, 2)
         );
         const game = games[message.payload.game];
-        let hostClient: WebSocket.WebSocket | null = null;
+        let hostClient: IConnectionInfo | null = null;
         if (game) {
           // remove from any other games and get the "primary host"
           games = removeConnectionFromGames(ws, games);
@@ -81,7 +153,10 @@ wss.on("connection", (ws) => {
           games[message.payload.game] = { playerConnections: [] };
         }
 
-        games[message.payload.game].playerConnections.push(ws);
+        games[message.payload.game].playerConnections.push({
+          websocket: ws,
+          playerRef: message.payload.playerRef,
+        });
         ws.send(
           JSON.stringify({
             type: "connectedtogame",
@@ -90,7 +165,7 @@ wss.on("connection", (ws) => {
         );
 
         if (!!hostClient) {
-          hostClient.send(
+          hostClient.websocket.send(
             JSON.stringify({
               type: "newplayerconnected",
               payload: {
@@ -100,11 +175,12 @@ wss.on("connection", (ws) => {
           );
         }
 
-        console.log(games);
+        debugPrintGames(games);
       } else if (message.type === "remoteaction") {
-        console.log("received remote action", message);
+        // console.log("received remote action", message);
         const clientsInGame = games[message.game]?.playerConnections ?? [];
-        clientsInGame.forEach((client) => {
+        clientsInGame.forEach((pc) => {
+          const client = pc.websocket;
           if (client !== ws && client.readyState === WebSocket.OPEN) {
             client.send(data, { binary: isBinary });
           }
@@ -116,7 +192,7 @@ wss.on("connection", (ws) => {
         const clientsInGame = games[message.game]?.playerConnections ?? [];
         if (clientsInGame.length > 0) {
           message.type = "remoteaction";
-          clientsInGame[0].send(JSON.stringify(message));
+          clientsInGame[0].websocket.send(JSON.stringify(message));
         }
       }
     } catch (e) {
@@ -126,14 +202,28 @@ wss.on("connection", (ws) => {
 
   ws.on("close", () => {
     console.log(`websocket closed`);
+    // First, get a list of all the games this ws was part of
+    const affectedGames = getGamesWithConnection(ws, games);
+    const playerRefInfoFromGames = getPlayerRefInfoForConnection(ws, games);
     games = removeConnectionFromGames(ws, games);
-    console.log(games);
+    debugPrintGames(games);
+
+    // Now, notify all the other clients that someone left
+    // the game
+    notifyLeftGame(games, affectedGames, playerRefInfoFromGames);
   });
 
   ws.on("error", () => {
     console.log(`websocket errored`);
+    // First, get a list of all the games this ws was part of
+    const affectedGames = getGamesWithConnection(ws, games);
+    const playerRefInfoFromGames = getPlayerRefInfoForConnection(ws, games);
     games = removeConnectionFromGames(ws, games);
-    console.log(games);
+    debugPrintGames(games);
+
+    // Now, notify all the other clients that someone left
+    // the game
+    notifyLeftGame(games, affectedGames, playerRefInfoFromGames);
   });
 });
 
