@@ -56,9 +56,9 @@ const getPlayerRefInfoForConnection = (
   ws: WebSocket.WebSocket,
   games: IGameInfo
 ): string[] => {
-  return Object.keys(games).map(
+  return getGamesWithConnection(ws, games).map(
     (game) =>
-      games[game].playerConnections.find((pc) => pc.websocket === ws).playerRef
+      games[game].playerConnections.find((pc) => pc.websocket === ws)?.playerRef
   );
 };
 
@@ -204,6 +204,8 @@ wss.on("connection", (ws) => {
     console.log(`websocket closed`);
     // First, get a list of all the games this ws was part of
     const affectedGames = getGamesWithConnection(ws, games);
+    console.log(`Found ${affectedGames.length} affected games`);
+
     const playerRefInfoFromGames = getPlayerRefInfoForConnection(ws, games);
     games = removeConnectionFromGames(ws, games);
     debugPrintGames(games);
@@ -217,6 +219,8 @@ wss.on("connection", (ws) => {
     console.log(`websocket errored`);
     // First, get a list of all the games this ws was part of
     const affectedGames = getGamesWithConnection(ws, games);
+    console.log(`Found ${affectedGames.length} affected games`);
+
     const playerRefInfoFromGames = getPlayerRefInfoForConnection(ws, games);
     games = removeConnectionFromGames(ws, games);
     debugPrintGames(games);
