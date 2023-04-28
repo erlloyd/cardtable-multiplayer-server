@@ -6,8 +6,26 @@ import {
   uniqueNamesGenerator,
 } from "unique-names-generator";
 import WebSocket, { WebSocketServer } from "ws";
+import https from "https";
+import fs from "fs";
+import express from "express";
 
-const wss = new WebSocketServer({ host: "0.0.0.0", port: 8080 });
+let wss: WebSocketServer;
+// If we were started in "secure mode", read the certificate
+console.log("ENVIRONMENT MODE IS " + process.env.MODE);
+if (process.env.MODE === "secure") {
+  var privateKey = fs.readFileSync("/certs/server.key", "utf8");
+  var certificate = fs.readFileSync("/certs/server.cert", "utf8");
+  var credentials = { key: privateKey, cert: certificate };
+  const app = express();
+
+  const httpsServer = https.createServer(credentials, app);
+  httpsServer.listen(8080, "0.0.0.0");
+
+  wss = new WebSocketServer({ server: httpsServer });
+} else {
+  wss = new WebSocketServer({ host: "0.0.0.0", port: 8080 });
+}
 
 interface IConnectionInfo {
   websocket: WebSocket.WebSocket;
