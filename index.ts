@@ -231,4 +231,4 @@ wss.on("connection", (ws) => {
   });
 });
 
-console.log("server started");
+console.log("server started on port 8080");
