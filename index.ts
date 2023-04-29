@@ -16,15 +16,23 @@ console.log("ENVIRONMENT MODE IS " + process.env.MODE);
 if (process.env.MODE === "secure") {
   var privateKey = fs.readFileSync("/certs/server.key", "utf8");
   var certificate = fs.readFileSync("/certs/server.cert", "utf8");
+
+  // Below is only for when running locally and you can't create
+  // a /certs dir
+  // var privateKey = fs.readFileSync("./server.key", "utf8");
+  // var certificate = fs.readFileSync("./server.cert", "utf8");
   var credentials = { key: privateKey, cert: certificate };
   const app = express();
 
   const httpsServer = https.createServer(credentials, app);
-  httpsServer.listen(8080, "0.0.0.0");
+  httpsServer.listen(3333, () => {
+    console.log("SECURE WSS server started on port 3333");
+  });
 
   wss = new WebSocketServer({ server: httpsServer });
 } else {
-  wss = new WebSocketServer({ host: "0.0.0.0", port: 8080 });
+  wss = new WebSocketServer({ host: "0.0.0.0", port: 3333 });
+  console.log("INSECURE WS server started on port 3333");
 }
 
 interface IConnectionInfo {
@@ -248,5 +256,3 @@ wss.on("connection", (ws) => {
     notifyLeftGame(games, affectedGames, playerRefInfoFromGames);
   });
 });
-
-console.log("server started on port 8080");
