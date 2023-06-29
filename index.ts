@@ -155,16 +155,32 @@ wss.on("connection", (ws) => {
           ],
         };
 
-        console.log("NEW GAME");
-        debugPrintGames(games);
-
         ws.send(
           JSON.stringify({
             type: "newgamecreated",
             payload: gameName,
           })
         );
+
+        // This is as good a place as any, let's clean up empty games
+        Object.keys(games).forEach((g) => {
+          if (games[g].playerConnections.length === 0) {
+            delete games[g];
+          }
+        });
+
+        console.log("NEW GAME");
+        debugPrintGames(games);
       } else if (message.type === "connecttogame") {
+        // Make sure the game is formatted correctly
+        const validate = /^[a-zA-Z]+-[a-zA-Z]+-[a-zA-Z]+$/;
+        if (!validate.test(message.payload.game)) {
+          console.error(
+            `The game ${message.payload.game} is not a valid game name`
+          );
+          return;
+        }
+
         console.log(
           "connecting to game " + JSON.stringify(message.payload, null, 2)
         );
@@ -175,7 +191,7 @@ wss.on("connection", (ws) => {
           games = removeConnectionFromGames(ws, games);
           hostClient = games[message.payload.game].playerConnections[0];
         } else {
-          // create the game because it didn't exist
+          // create the game because it didn't exist, but only if the format looks right
           games[message.payload.game] = { playerConnections: [] };
         }
 
@@ -203,6 +219,7 @@ wss.on("connection", (ws) => {
 
         debugPrintGames(games);
       } else if (message.type === "remoteaction") {
+        // if there isn't a game, create one
         // console.log("received remote action", message);
         const clientsInGame = games[message.game]?.playerConnections ?? [];
         clientsInGame.forEach((pc) => {
