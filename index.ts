@@ -51,6 +51,7 @@ interface IMessage {
   type: string;
   game?: string;
   payload: any;
+  PING?: boolean;
 }
 
 let games: IGameInfo = {};
@@ -141,7 +142,19 @@ wss.on("connection", (ws) => {
   ws.on("message", (data, isBinary) => {
     try {
       const message: IMessage = JSON.parse(data.toString());
-      if (message.type === "newgame") {
+      if (!!message.PING) {
+        let hostClient: IConnectionInfo | null = null;
+        hostClient = games[message.game]?.playerConnections[0];
+
+        if (!!hostClient && ws !== hostClient.websocket) {
+          message.type = "remoteaction";
+          message.payload = {
+            PING: true,
+            state: (message as any).state,
+          };
+          hostClient.websocket.send(JSON.stringify(message));
+        }
+      } else if (message.type === "newgame") {
         const customConfig: Config = {
           dictionaries: [adjectives, colors, animals],
           separator: "-",
